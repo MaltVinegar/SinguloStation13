@@ -1,7 +1,8 @@
 #define FISHING_IDLE 0
-//#define FISHING_CAST 1
-#define FISHING_TROL 2
-#define FISHING_REEL 3
+#define FISHING_CAST 1
+#define FISHING_WAIT 2
+#define FISHING_HOOK 3
+#define FISHING_REEL 4
 
 /obj/item/rod_component
 
@@ -22,14 +23,18 @@
 	icon_state = "stew"
 
 	var/luck = 7
-	var/strength = 40
+	var/strength = 100
 
 	// time for cast bar to go up and back down
 	// should be even!
 	var/cast_speed = 2 SECONDS
 	var/fishing_state = FISHING_IDLE
-	var/turf/fishing_at
+
 	var/datum/fishing_catch/hooked
+	var/turf/open/fishing_at
+	var/mob/caster
+	var/datum/progressbar/bar
+	var/timerid
 
 	// this is for the two_handed component
 	var/is_wielded
@@ -40,8 +45,11 @@
 	var/item/rod_component/sinker/sinker
 	var/item/rod_component/bait/bait
 
-	var/static/datum/fishing_loot/loot = new /datum/fishing_loot()
-
+	var/static/list/loot_tables = list(
+		/turf/open/space/basic = new /datum/fishing_loot(),
+		/turf/open/lava = new /datum/fishing_loot(),
+		/turf/open/water = new /datum/fishing_loot()
+	)
 
 /obj/item/fishing_rod/ComponentInitialize()
 	. = ..()
@@ -59,52 +67,106 @@
 	if(.)
 		return
 
-	if(fishing_state == FISHING_REEL)
-		hooked = pickweight(loot.pick_rarity(luck))
-		new hooked.caught_type (fishing_at)
-		fishing_at = null
-		hooked = null
-		fishing_state = FISHING_IDLE
-		return
+	switch(fishing_state)
+		if(FISHING_IDLE)
+			if(!isopenturf(target))
+				return
+			if(!loot_tables[target.type])
+				return
+			//Need to make this check for a line of open space, rather than view
+			if(!(target in view(user.client? user.client.view : world.view, user)))
+				return
+			caster = user
+			fishing_at = target
+			cast_minigame() // Times 2, because the bar goes up and back down
+			return
 
-	//Need to make this check for a line of open space, rather than view
-	if(!isopenturf(target))
-		return
+		if(FISHING_CAST)
+			timerid = addtimer(CALLBACK(src, .proc/bite, bar.last_progress), 4 SECONDS, TIMER_STOPPABLE)
 
-	if(!(target in view(user.client? user.client.view : world.view, user)))
-		return
+			fishing_state = FISHING_WAIT
 
-	if(fishing_state == FISHING_IDLE)
-		fishing_at = target
-		user.visible_message(
-			"<span class='notice'>You cast your fishing line.</span>", \
-			null ,\
-			"<span class='notice'>[user] casts their fishing line.</span>", \
-			DEFAULT_MESSAGE_RANGE
-		)
-		cast_minigame(user) // Times 2, because the bar goes up and back down
+			qdel(bar)
+			bar = null
 
-/obj/item/fishing_rod/proc/cast_minigame(mob/user)
-	var/datum/progressbar/bar = new /datum/progressbar(user, cast_speed, user)
+			return
+
+		if(FISHING_WAIT)
+			fishing_state = FISHING_IDLE
+			caster = null
+			fishing_at = null
+			user.visible_message(
+				"<span class='notice'>You reel the line in.</span>", \
+				null ,\
+				"<span class='notice'>[user] reels their fishing line in.</span>", \
+				DEFAULT_MESSAGE_RANGE
+			)
+			return
+
+		if(FISHING_HOOK)
+			fishing_state = FISHING_REEL
+			user.visible_message(
+				"<span class='warning'>You hooked the something!</span>", \
+				null ,\
+				"<span class='notice'>[user] hooked something!</span>", \
+				DEFAULT_MESSAGE_RANGE
+			)
+			return
+
+		if(FISHING_REEL)
+			var/AE = new hooked.caught_type(fishing_at)
+
+			user.visible_message(
+				"<span class='notice'>You reel in \the [AE].</span>", \
+				null ,\
+				"<span class='notice'>[user] reels in \the [AE].</span>", \
+				DEFAULT_MESSAGE_RANGE
+			)
+
+			caster = null
+			fishing_at = null
+			hooked = null
+			return
+
+/obj/item/fishing_rod/proc/cast_minigame()
+	caster.visible_message(
+		"<span class='notice'>You cast your fishing line.</span>", \
+		null ,\
+		"<span class='notice'>[caster] casts their fishing line.</span>", \
+		DEFAULT_MESSAGE_RANGE
+	)
+
+	bar = new /datum/progressbar(caster, cast_speed, caster)
 	var/start = world.time;
 	var/end = world.time + (cast_speed * 2)
-	while(world.time < end) // TODO: Handle movement
-		stoplag(1)
-		bar.update((cast_speed) - abs(world.time - start - (cast_speed)))
-	qdel(bar)
-	fishing_state = FISHING_TROL
 
-	while(fishing_state == FISHING_TROL)
+	fishing_state = FISHING_CAST
+
+	while(world.time < end && fishing_state == FISHING_CAST) // TODO: Handle movement
 		stoplag(1)
-		sleep(3 SECONDS)
-		if(prob(strength))
-			user.visible_message(
-				"<span class='warning'>Something bit!</span>", \
-				null ,\
-				"<span class='notice'>[user]'s line gains tension.</span>", \
-				COMBAT_MESSAGE_RANGE
-			)
-			fishing_state = FISHING_REEL
+		bar?.update((cast_speed) - abs(world.time - start - (cast_speed)))
+		// The null check is because it's possible for it to be deleted in the middle of the loop from inside the afterattack proc
+
+	if(fishing_state == FISHING_CAST)
+		fishing_state = FISHING_IDLE
+		qdel(bar)
+		bar = null
+
+/obj/item/fishing_rod/proc/bite(minigame_score)
+	fishing_state = FISHING_HOOK
+
+	caster.visible_message(
+		"<span class='warning'>You feel something on the line!</span>", \
+		null ,\
+		"<span class='notice'>[caster]'s line gains a bit of tension.</span>", \
+		DEFAULT_MESSAGE_RANGE
+	)
+	hooked = pickweight(loot_tables[fishing_at.type].pick_rarity(luck, minigame_score))
+	timerid = 0
+	return
+
+/obj/item/fishing_rod/proc/struggle()
+	return
 
 /obj/item/fishing_rod/attack_self(mob/user)
 	return ..()
@@ -117,5 +179,6 @@ NEED:
 
 #undef FISHING_IDLE
 #undef FISHING_CAST
-#undef FISHING_TROL
+#undef FISHING_WAIT
+#undef FISHING_HOOK
 #undef FISHING_REEL

@@ -1,14 +1,17 @@
 /datum/fishing_catch
 	var/caught_type
-	var/resistance = 10
+	var/resistance = 100
+	var/tug_chance = 100
 
 /datum/fishing_catch/carp
 	caught_type = /mob/living/simple_animal/hostile/carp
-	resistance = 10
+	resistance = 60
+	tug_chance = 100
 
 /datum/fishing_catch/junk
 	caught_type = /obj/item/trash/plate
-	resistance = 1
+	resistance = 0
+	tug_chance = 20
 
 /datum/fishing_loot
 	var/static/list/legendary
@@ -20,5 +23,5 @@
 	)
 	var/static/list/junk
 
-/datum/fishing_loot/proc/pick_rarity(luck)
+/datum/fishing_loot/proc/pick_rarity(luck, power)
 	return common
