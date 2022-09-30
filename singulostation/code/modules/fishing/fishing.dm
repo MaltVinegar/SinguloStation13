@@ -1,8 +1,9 @@
-#define FISHING_IDLE 0
-#define FISHING_CAST 1
-#define FISHING_WAIT 2
-#define FISHING_HOOK 3
-#define FISHING_REEL 4
+#define IDLE 0
+#define CAST 1
+#define WAIT 2
+#define HOOK 3
+#define REEL 4
+#define PULL 5
 
 /obj/item/rod_component
 
@@ -10,15 +11,23 @@
 
 /obj/item/rod_component/hook
 
-/obj/item/rod_component/line
-
 /obj/item/rod_component/hook/tackle
 
+/obj/item/rod_component/line
+
 /obj/item/rod_component/sinker
+
+/obj/item/rod_component/bobber
+	name = "bobber"
+
+	icon = 'singulostation/icons/obj/fishing.dmi'
+	icon_state = "hook"
 
 /obj/item/rod_component/bait
 
 /obj/item/fishing_rod
+	name = "fishing rod"
+
 	icon = 'icons/obj/food/soupsalad.dmi'
 	icon_state = "stew"
 
@@ -28,28 +37,40 @@
 	// time for cast bar to go up and back down
 	// should be even!
 	var/cast_speed = 2 SECONDS
-	var/fishing_state = FISHING_IDLE
 
+	var/fishing_state = IDLE
 	var/datum/fishing_catch/hooked
-	var/turf/open/fishing_at
+	var/atom/fishing_at
 	var/mob/caster
-	var/datum/progressbar/bar
-	var/timerid
+
+	var/datum/fishingline/fishingline
+
+	var/progress = 0
 
 	// this is for the two_handed component
 	var/is_wielded
 
-	var/item/rod_component/reel/reel
-	var/item/rod_component/hook/hook
-	var/item/rod_component/line/line
-	var/item/rod_component/sinker/sinker
-	var/item/rod_component/bait/bait
+//	var/obj/item/rod_component/reel/reel
+//	var/obj/item/rod_component/hook/hook
+//	var/obj/item/rod_component/line/line
+//	var/obj/item/rod_component/sinker/sinker
+	var/obj/item/rod_component/bobber/bob
+//	var/obj/item/rod_component/bait/bait
 
-	var/static/list/loot_tables = list(
-		/turf/open/space/basic = new /datum/fishing_loot(),
-		/turf/open/lava = new /datum/fishing_loot(),
-		/turf/open/water = new /datum/fishing_loot()
+// I don't want this to be global
+// It would be a constant if DM supported constant lists
+// It's an associative list rather than a regular list for clarity
+	var/static/list/datum/fishing_loot/fishing_loot_table_list = list(
+		"space" = new /datum/fishing_loot/space(),
+		"lava"  = new /datum/fishing_loot/lava(),
+		"water" = new /datum/fishing_loot/water(),
+		"none"  = new /datum/fishing_loot/none(),
 	)
+
+/obj/item/fishing_rod/Destroy()
+	fishing_state = IDLE
+
+	. = ..()
 
 /obj/item/fishing_rod/ComponentInitialize()
 	. = ..()
@@ -68,67 +89,97 @@
 		return
 
 	switch(fishing_state)
-		if(FISHING_IDLE)
-			if(!isopenturf(target))
-				return
-			if(!loot_tables[target.type])
-				return
-			//Need to make this check for a line of open space, rather than view
-			if(!(target in view(user.client? user.client.view : world.view, user)))
-				return
+		if(IDLE) // Start: IDLE -> CAST
+
 			caster = user
 			fishing_at = target
-			cast_minigame() // Times 2, because the bar goes up and back down
-			return
 
-		if(FISHING_CAST)
-			timerid = addtimer(CALLBACK(src, .proc/bite, bar.last_progress), 4 SECONDS, TIMER_STOPPABLE)
+			cast_minigame() // <-- fishing_state changed in this function
 
-			fishing_state = FISHING_WAIT
+		if(CAST) // Success: CAST -> WAIT
+			fishing_state = WAIT
 
-			qdel(bar)
-			bar = null
+		if(WAIT) // Quit Early: WAIT -> IDLE
+			fishing_state = IDLE
 
-			return
+			qdel(bob)
+			bob = null
 
-		if(FISHING_WAIT)
-			fishing_state = FISHING_IDLE
-			caster = null
-			fishing_at = null
 			user.visible_message(
 				"<span class='notice'>You reel the line in.</span>", \
 				null ,\
 				"<span class='notice'>[user] reels their fishing line in.</span>", \
 				DEFAULT_MESSAGE_RANGE
 			)
-			return
 
-		if(FISHING_HOOK)
-			fishing_state = FISHING_REEL
+		if(HOOK) // Success HOOK -> REEL
+			fishing_state = REEL
+
 			user.visible_message(
 				"<span class='warning'>You hooked the something!</span>", \
 				null ,\
 				"<span class='notice'>[user] hooked something!</span>", \
 				DEFAULT_MESSAGE_RANGE
 			)
-			return
 
-		if(FISHING_REEL)
-			var/AE = new hooked.caught_type(fishing_at)
+		if(REEL)
+			progress -= 10
+			if(progress < 0)
+				progress = 0
 
 			user.visible_message(
-				"<span class='notice'>You reel in \the [AE].</span>", \
+				"<span class='warning'>You pull on your fishing rod, but you did it too early!</span>", \
 				null ,\
-				"<span class='notice'>[user] reels in \the [AE].</span>", \
+				"<span class='notice'>[user] pulls on their fishing rod.</span>", \
 				DEFAULT_MESSAGE_RANGE
 			)
 
-			caster = null
-			fishing_at = null
-			hooked = null
-			return
+		if(PULL)
+			progress += 50
+			if(progress >= 100) // Success PULL -> IDLE
+				fishing_state = IDLE
+
+				var/AE = new hooked.caught_type(fishing_at)
+
+				user.visible_message(
+					"<span class='notice'>You reel in \the [AE].</span>", \
+					null ,\
+					"<span class='notice'>[user] reels in \the [AE].</span>", \
+					DEFAULT_MESSAGE_RANGE
+				)
+
+			else // Success, but not done yet PULL -> REEL
+				fishing_state = REEL
+
+				user.visible_message(
+					"<span class='notice'>You pull on your fishing rod.</span>", \
+					null ,\
+					"<span class='notice'>[user] pulls on their fishing rod.</span>", \
+					DEFAULT_MESSAGE_RANGE
+				)
+
+
 
 /obj/item/fishing_rod/proc/cast_minigame()
+	fishing_state = CAST
+
+	var/user_loc = caster.loc
+	var/datum/progressbar/bar = new /datum/progressbar(caster, cast_speed, caster)
+	var/start = world.time
+	var/end = world.time + (cast_speed * 2)
+
+	while(world.time < end && fishing_state == CAST && user_loc == caster.loc) // TODO: Handle movement
+		stoplag(1)
+		bar.update(cast_speed - abs(world.time - start - cast_speed))
+
+	var/minigame_score = bar.last_progress
+	qdel(bar)
+
+	// fishing_state should be CAST if it reaches here // Fail CAST -> IDLE
+	if(fishing_state != WAIT)
+		fishing_state = IDLE
+		return
+
 	caster.visible_message(
 		"<span class='notice'>You cast your fishing line.</span>", \
 		null ,\
@@ -136,49 +187,107 @@
 		DEFAULT_MESSAGE_RANGE
 	)
 
-	bar = new /datum/progressbar(caster, cast_speed, caster)
-	var/start = world.time;
-	var/end = world.time + (cast_speed * 2)
+	bob = new /obj/item/rod_component/bobber(caster.loc)
+	bob.throw_at(fishing_at, 4, 1, caster, FALSE)
 
-	fishing_state = FISHING_CAST
-
-	while(world.time < end && fishing_state == FISHING_CAST) // TODO: Handle movement
-		stoplag(1)
-		bar?.update((cast_speed) - abs(world.time - start - (cast_speed)))
-		// The null check is because it's possible for it to be deleted in the middle of the loop from inside the afterattack proc
-
-	if(fishing_state == FISHING_CAST)
-		fishing_state = FISHING_IDLE
-		qdel(bar)
-		bar = null
-
-/obj/item/fishing_rod/proc/bite(minigame_score)
-	fishing_state = FISHING_HOOK
-
-	caster.visible_message(
-		"<span class='warning'>You feel something on the line!</span>", \
-		null ,\
-		"<span class='notice'>[caster]'s line gains a bit of tension.</span>", \
-		DEFAULT_MESSAGE_RANGE
+	fishingline = new /datum/fishingline( \
+		caster, bob, time=6000, beam_icon='singulostation/icons/effects/fishingline.dmi', \
+		beam_icon_state="line", btype=/obj/effect/fishingline \
 	)
-	hooked = pickweight(loot_tables[fishing_at.type].pick_rarity(luck, minigame_score))
-	timerid = 0
-	return
 
-/obj/item/fishing_rod/proc/struggle()
-	return
+	INVOKE_ASYNC(fishingline, /datum/fishingline.proc/Start)
+	progress = 0
+
+	var/fish_next
+	var/datum/fishing_loot/tile_loot
+	while(fishing_state > CAST)
+		fish_next = world.time + 4 SECONDS
+
+		do
+			stoplag(1)
+			if(user_loc != caster.loc)
+				fishing_state = IDLE
+		while(fishing_state > CAST && world.time < fish_next)
+
+		fishing_at = get_turf(bob)
+		tile_loot = fishing_loot_table(fishing_at)
+
+		switch(fishing_state)
+			if(WAIT)
+				//This will eventually be the probablility of catching anything per cycle (on non-fishable tiles 0%)
+				if(prob(tile_loot.richness))  // Success WAIT -> HOOK
+					fishing_state = HOOK
+					caster.visible_message(
+						"<span class='warning'>You feel something on the line!</span>", \
+						null ,\
+						"<span class='notice'>[caster]'s line gains a bit of tension.</span>", \
+						DEFAULT_MESSAGE_RANGE
+					)
+					hooked = pickweight(tile_loot.pick_rarity(luck, minigame_score))
+			if(HOOK)
+				if(prob(hooked.resistance)) // Fail HOOK -> WAIT
+					fishing_state = WAIT
+
+					caster.visible_message(
+						"<span class='warning'>It escaped!</span>", \
+						null ,\
+						"<span class='notice'>[caster]'s line loses all tension.</span>", \
+						DEFAULT_MESSAGE_RANGE
+					)
+				else if(prob(hooked.tug_chance))
+					caster.visible_message(
+						"<span class='warning'>You feel something pull on the line!</span>", \
+						null ,\
+						"<span class='notice'>[caster]'s line gains a bit of tension.</span>", \
+						DEFAULT_MESSAGE_RANGE
+					)
+			if(REEL)
+				if(prob(60))
+					fishing_state = PULL
+					caster.visible_message(
+						"<span class='warning'>You feel something on the line!</span>", \
+						null ,\
+						"<span class='notice'>[caster]'s line gains a bit of tension.</span>", \
+						DEFAULT_MESSAGE_RANGE
+					)
+			if(PULL)
+				if(prob(60))
+					fishing_state = REEL
+					progress -= 20
+					caster.visible_message(
+						"<span class='warning'>The line loses some tension!</span>", \
+						null ,\
+						"<span class='notice'>[caster]'s line loses a bit of tension.</span>", \
+						DEFAULT_MESSAGE_RANGE
+					)
+	qdel(fishingline)
+	fishingline = null
+	qdel(bob)
+	bob = null
 
 /obj/item/fishing_rod/attack_self(mob/user)
 	return ..()
+
+// Doing this for a default value and subtypes
+/obj/item/fishing_rod/proc/list/datum/fishing_loot/fishing_loot_table(var/turf/fishing_at)
+	if(istype(fishing_at, /turf/open/space))
+		return fishing_loot_table_list["space"]
+	if(istype(fishing_at, /turf/open/lava))
+		return fishing_loot_table_list["lava"]
+	if(istype(fishing_at, /turf/open/water))
+		return fishing_loot_table_list["water"]
+
+	return fishing_loot_table_list["none"]
+
+#undef IDLE
+#undef CAST
+#undef WAIT
+#undef HOOK
+#undef REEL
+#undef PULL
 
 /*
 NEED:
 	Sprites
 	UI
 */
-
-#undef FISHING_IDLE
-#undef FISHING_CAST
-#undef FISHING_WAIT
-#undef FISHING_HOOK
-#undef FISHING_REEL
