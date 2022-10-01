@@ -5,25 +5,65 @@
 #define REEL 4
 #define PULL 5
 
+#define ROD_NONE	0
+#define ROD_REEL	(1 >> 0)
+#define ROD_HOOK	(1 >> 1)
+#define ROD_LINE	(1 >> 2)
+#define ROD_SINKER	(1 >> 3)
+#define ROD_BOBBER	(1 >> 4)
+#define ROD_BAIT	(1 >> 5)
+#define ROD_ALL		(ROD_REEL|ROD_HOOK|ROD_LINE|ROD_SINKER|ROD_BOBBER|ROD_BAIT)
+
+#define ROD_TACKLE	(ROD_HOOK|ROD_BAIT)
+
 /obj/item/rod_component
+	name = "rod component"
+
+	icon = 'icons/obj/food/soupsalad.dmi'
+//	icon = 'singulostation/icons/obj/fishing.dmi'
+	icon_state = "stew"
+
+	var/rod_slot = ROD_NONE
 
 /obj/item/rod_component/reel
+	name = "reel"
+
+	rod_slot = ROD_REEL
 
 /obj/item/rod_component/hook
+	name = "fish hook"
 
-/obj/item/rod_component/hook/tackle
+	rod_slot = ROD_HOOK
+
+/obj/item/rod_component/tackle
+	name = "tackle"
+
+	rod_slot = ROD_TACKLE
 
 /obj/item/rod_component/line
+	name = "fishing line"
+
+	rod_slot = ROD_LINE
 
 /obj/item/rod_component/sinker
+	name = "sinker"
+
+	rod_slot = ROD_SINKER
 
 /obj/item/rod_component/bobber
 	name = "bobber"
 
 	icon = 'singulostation/icons/obj/fishing.dmi'
+	name = "bobber"
+
 	icon_state = "hook"
 
+	rod_slot = ROD_BOBBER
+
 /obj/item/rod_component/bait
+	name = "bait"
+
+	rod_slot = ROD_BAIT
 
 /obj/item/fishing_rod
 	name = "fishing rod"
@@ -35,7 +75,7 @@
 	var/strength = 100
 
 	// time for cast bar to go up and back down
-	// should be even!
+	// should be even! // I changed things, I do not remember if it still needs to be even
 	var/cast_speed = 2 SECONDS
 
 	var/fishing_state = IDLE
@@ -50,21 +90,27 @@
 	// this is for the two_handed component
 	var/is_wielded
 
-//	var/obj/item/rod_component/reel/reel
-//	var/obj/item/rod_component/hook/hook
-//	var/obj/item/rod_component/line/line
-//	var/obj/item/rod_component/sinker/sinker
+	var/filled_slots = ROD_NONE
+
+// Read only or I will bludgeon you
+	var/list/obj/item/rod_component/rod_components = list(
+		ROD_REEL = null,
+		ROD_HOOK = null,
+		ROD_LINE = null,
+		ROD_SINKER = null,
+		ROD_BOBBER = null,
+		ROD_BAIT = null,
+	)
 	var/obj/item/rod_component/bobber/bob
-//	var/obj/item/rod_component/bait/bait
 
 // I don't want this to be global
 // It would be a constant if DM supported constant lists
 // It's an associative list rather than a regular list for clarity
 	var/static/list/datum/fishing_loot/fishing_loot_table_list = list(
 		"space" = new /datum/fishing_loot/space(),
-		"lava"  = new /datum/fishing_loot/lava(),
+		"lava" = new /datum/fishing_loot/lava(),
 		"water" = new /datum/fishing_loot/water(),
-		"none"  = new /datum/fishing_loot/none(),
+		"none" = new /datum/fishing_loot/none(),
 	)
 
 /obj/item/fishing_rod/Destroy()
@@ -77,6 +123,27 @@
 
 	AddComponent(/datum/component/two_handed, unwield_on_swap = TRUE, auto_wield = TRUE, ignore_attack_self = TRUE, force_wielded = force, force_unwielded = force, block_power_wielded = block_power, block_power_unwielded = block_power)
 
+/obj/item/fishing_rod/attackby(obj/item/attacked_by, mob/user, params)
+	if(params2list(params)["alt"])
+		for(var/obj/item/rod_component/rc in rod_components)
+			remove_rod_component(rc)
+		return
+
+	if(istype(attacked_by, /obj/item/rod_component))
+		var/obj/item/rod_component/toadd = attacked_by
+		if(add_rod_component(toadd))
+			user.visible_message(
+				"<span class='notice'>You put \the [toadd] onto \the [src].</span>",
+				null,
+				"<span class='notice'>[user] puts \the [toadd] on \their [src].</span>",
+				DEFAULT_MESSAGE_RANGE
+			)
+//		else
+//			todo: tell the user they can't do that
+		return
+
+	return ..()
+
 /obj/item/fishing_rod/proc/wield()
 	is_wielded = TRUE
 
@@ -86,6 +153,10 @@
 /obj/item/fishing_rod/afterattack(atom/target, mob/user, flag, click_parameters)
 	. = ..()
 	if(.)
+		return
+
+	if(filled_slots != ROD_ALL)
+// TODO: tell the caster they can't do that
 		return
 
 	switch(fishing_state)
@@ -102,13 +173,13 @@
 		if(WAIT) // Quit Early: WAIT -> IDLE
 			fishing_state = IDLE
 
-			qdel(bob)
+			bob.moveToNullspace()
 			bob = null
 
 			user.visible_message(
-				"<span class='notice'>You reel the line in.</span>", \
-				null ,\
-				"<span class='notice'>[user] reels their fishing line in.</span>", \
+				"<span class='notice'>You reel the line in.</span>",
+				null,
+				"<span class='notice'>[user] reels their fishing line in.</span>",
 				DEFAULT_MESSAGE_RANGE
 			)
 
@@ -116,9 +187,9 @@
 			fishing_state = REEL
 
 			user.visible_message(
-				"<span class='warning'>You hooked the something!</span>", \
-				null ,\
-				"<span class='notice'>[user] hooked something!</span>", \
+				"<span class='warning'>You hooked the something!</span>",
+				null,
+				"<span class='notice'>[user] hooked something!</span>",
 				DEFAULT_MESSAGE_RANGE
 			)
 
@@ -128,9 +199,9 @@
 				progress = 0
 
 			user.visible_message(
-				"<span class='warning'>You pull on your fishing rod, but you did it too early!</span>", \
-				null ,\
-				"<span class='notice'>[user] pulls on their fishing rod.</span>", \
+				"<span class='warning'>You pull on your fishing rod, but you did it too early!</span>",
+				null,
+				"<span class='notice'>[user] pulls on their fishing rod.</span>",
 				DEFAULT_MESSAGE_RANGE
 			)
 
@@ -142,9 +213,9 @@
 				var/AE = new hooked.caught_type(fishing_at)
 
 				user.visible_message(
-					"<span class='notice'>You reel in \the [AE].</span>", \
-					null ,\
-					"<span class='notice'>[user] reels in \the [AE].</span>", \
+					"<span class='notice'>You reel in \the [AE].</span>",
+					null,
+					"<span class='notice'>[user] reels in \the [AE].</span>",
 					DEFAULT_MESSAGE_RANGE
 				)
 
@@ -152,13 +223,38 @@
 				fishing_state = REEL
 
 				user.visible_message(
-					"<span class='notice'>You pull on your fishing rod.</span>", \
-					null ,\
-					"<span class='notice'>[user] pulls on their fishing rod.</span>", \
+					"<span class='notice'>You pull on your fishing rod.</span>",
+					null,
+					"<span class='notice'>[user] pulls on their fishing rod.</span>",
 					DEFAULT_MESSAGE_RANGE
 				)
 
+/obj/item/fishing_rod/proc/add_rod_component(obj/item/rod_component/toadd)
+	if(filled_slots & toadd.rod_slot)
+		return FALSE
 
+
+	// This is to have a rod_component that can take up multiple slots
+	for(var/i = 1; i <= ROD_BAIT; i >>= 1)
+		if(i & toadd.rod_slot)
+			rod_components[i] = toadd
+
+	toadd.moveToNullspace()
+
+	filled_slots |= toadd.rod_slot
+	return TRUE
+
+/obj/item/fishing_rod/proc/remove_rod_component(mob/user, obj/item/rod_component/toremove)
+	if(!toremove)
+		return
+
+	for(var/i = 1; i <= ROD_BAIT; i >>= 1)
+		if(i & toremove.rod_slot)
+			rod_components[i] = null
+
+	toremove.forceMove(user)
+
+	filled_slots &= ~toremove.rod_slot
 
 /obj/item/fishing_rod/proc/cast_minigame()
 	fishing_state = CAST
@@ -181,18 +277,19 @@
 		return
 
 	caster.visible_message(
-		"<span class='notice'>You cast your fishing line.</span>", \
-		null ,\
-		"<span class='notice'>[caster] casts their fishing line.</span>", \
+		"<span class='notice'>You cast your fishing line.</span>",
+		null,
+		"<span class='notice'>[caster] casts their fishing line.</span>",
 		DEFAULT_MESSAGE_RANGE
 	)
 
-	bob = new /obj/item/rod_component/bobber(caster.loc)
+	bob = rod_components[ROD_BOBBER]
+	bob.forceMove(caster)
 	bob.throw_at(fishing_at, 4, 1, caster, FALSE)
 
-	fishingline = new /datum/fishingline( \
-		caster, bob, time=6000, beam_icon='singulostation/icons/effects/fishingline.dmi', \
-		beam_icon_state="line", btype=/obj/effect/fishingline \
+	fishingline = new /datum/fishingline(
+		caster, bob, time=6000, beam_icon='singulostation/icons/effects/fishingline.dmi',
+		beam_icon_state="line", btype=/obj/effect/fishingline
 	)
 
 	INVOKE_ASYNC(fishingline, /datum/fishingline.proc/Start)
@@ -218,9 +315,9 @@
 				if(prob(tile_loot.richness))  // Success WAIT -> HOOK
 					fishing_state = HOOK
 					caster.visible_message(
-						"<span class='warning'>You feel something on the line!</span>", \
-						null ,\
-						"<span class='notice'>[caster]'s line gains a bit of tension.</span>", \
+						"<span class='warning'>You feel something on the line!</span>",
+						null,
+						"<span class='notice'>[caster]'s line gains a bit of tension.</span>",
 						DEFAULT_MESSAGE_RANGE
 					)
 					hooked = pickweight(tile_loot.pick_rarity(luck, minigame_score))
@@ -229,25 +326,25 @@
 					fishing_state = WAIT
 
 					caster.visible_message(
-						"<span class='warning'>It escaped!</span>", \
-						null ,\
-						"<span class='notice'>[caster]'s line loses all tension.</span>", \
+						"<span class='warning'>It escaped!</span>",
+						null,
+						"<span class='notice'>[caster]'s line loses all tension.</span>",
 						DEFAULT_MESSAGE_RANGE
 					)
 				else if(prob(hooked.tug_chance))
 					caster.visible_message(
-						"<span class='warning'>You feel something pull on the line!</span>", \
-						null ,\
-						"<span class='notice'>[caster]'s line gains a bit of tension.</span>", \
+						"<span class='warning'>You feel something pull on the line!</span>",
+						null,
+						"<span class='notice'>[caster]'s line gains a bit of tension.</span>",
 						DEFAULT_MESSAGE_RANGE
 					)
 			if(REEL)
 				if(prob(60))
 					fishing_state = PULL
 					caster.visible_message(
-						"<span class='warning'>You feel something on the line!</span>", \
-						null ,\
-						"<span class='notice'>[caster]'s line gains a bit of tension.</span>", \
+						"<span class='warning'>You feel something on the line!</span>",
+						null,
+						"<span class='notice'>[caster]'s line gains a bit of tension.</span>",
 						DEFAULT_MESSAGE_RANGE
 					)
 			if(PULL)
@@ -255,14 +352,14 @@
 					fishing_state = REEL
 					progress -= 20
 					caster.visible_message(
-						"<span class='warning'>The line loses some tension!</span>", \
-						null ,\
-						"<span class='notice'>[caster]'s line loses a bit of tension.</span>", \
+						"<span class='warning'>The line loses some tension!</span>",
+						null,
+						"<span class='notice'>[caster]'s line loses a bit of tension.</span>",
 						DEFAULT_MESSAGE_RANGE
 					)
 	qdel(fishingline)
 	fishingline = null
-	qdel(bob)
+	bob.moveToNullspace()
 	bob = null
 
 /obj/item/fishing_rod/attack_self(mob/user)
