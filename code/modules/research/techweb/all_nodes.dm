@@ -345,6 +345,7 @@
 		"surgery_revival",
 		"surgery_vein_thread",
 		"surgery_viral_bond",
+		"autodoc", //Singulostation edit; adds autodoc
 	)
 	research_costs = list(TECHWEB_POINT_TYPE_GENERIC = 5000)
 	export_price = 5000
@@ -427,6 +428,20 @@
 		"suit_storage_unit",
 		"tesla_coil",
 		"thermomachine",
+		//Singulostation begin - Printable techfabs and protolathes
+		"techfab_departmental_engineering",
+		"techfab_departmental_science",
+		"techfab_departmental_medical",
+		"techfab_departmental_cargo",
+		"techfab_departmental_security",
+		"techfab_departmental_service", 
+		"protolathe_departmental_engineering",
+		"protolathe_departmental_science",
+		"protolathe_departmental_medical",
+		"protolathe_departmental_cargo",
+		"protolathe_departmental_security",
+		"protolathe_departmental_service",
+		//Singulostation end - Printable techfabs and protolathes
 	)
 	research_costs = list(TECHWEB_POINT_TYPE_GENERIC = 7500)
 	export_price = 5000
@@ -1245,6 +1260,8 @@
 		"noreactsyringe",
 		"splitbeaker",
 		"stasis",
+		"cryogenicpod", // SinguloStation13 Edit (Cryogenic freezers change - added cryogenic pods to research)
+		"cryogenicpodcontrol", // SinguloStation13 Edit (Cryogenic freezers change - added cryogenic pods to research)
 	)
 	research_costs = list(TECHWEB_POINT_TYPE_GENERIC = 2000)
 	export_price = 4000
@@ -1526,6 +1543,7 @@
 		"mechanicalpinches",
 		"searingtool",
 		"wirebrush_adv",
+		"advancedmultitool", //Singulostation edit - Advanced multitool
 	)
 	prereq_ids = list("adv_engi")
 	research_costs = list(TECHWEB_POINT_TYPE_GENERIC = 2500)
